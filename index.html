@@ -22,6 +22,8 @@
     a{color:#0a58ca;text-decoration:none}
     a:hover{text-decoration:underline}
   </style>
+  <!-- 用于解压 #z=... 的压缩载荷（字幕/总结） -->
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
 </head>
 <body>
   <header>
@@ -52,9 +54,9 @@
     </div>
 
     <div class="card">
-      <h2>教学要点（Markdown）</h2>
+      <h2>教学要点（Markdown/HTML）</h2>
       <div id="summary" class="summary">（无）</div>
-      <div class="muted">把渲染后的 Markdown 作为 HTML 传入更简单：<span class="kbd">summary=...</span></div>
+      <div class="muted">建议把渲染后的 Markdown 作为 HTML 放入 <span class="kbd">summary</span> 或哈希载荷。</div>
     </div>
 
     <div class="footer">
@@ -68,10 +70,11 @@
       <span class="tag">prefix</span>
       <span class="tag">pad</span>
       <span class="tag">ext</span>
-      <span class="tag">srt</span>
-      <span class="tag">summary</span>
+      <span class="tag">srt / srt_url</span>
+      <span class="tag">summary / summary_url</span>
+      <span class="tag">#z=压缩载荷</span>
       <div style="margin-top:8px">
-        例（短参）：<code>?audio=https://.../audio.m4a&frames_base=https://.../input-frames/&fstart=1&fend=15</code>
+        例（短参）：<code>?audio=https://.../audio.m4a&frames_base=https://.../input-frames/&fstart=1&fend=15#z=...</code>
       </div>
     </div>
   </div>
@@ -79,18 +82,36 @@
   <script>
     const qs = new URLSearchParams(location.search);
 
-    // 基本参数
+    // ============ ① 从哈希读取压缩载荷（可包含 srt/summary 等大文本） ============
+    let hashPayload = {};
+    (function readHash(){
+      try {
+        const h = (location.hash || "").slice(1);     // 去掉 '#'
+        if (!h) return;
+        // 允许两种：z=（压缩）或 p=（未压缩 JSON，备用）
+        const [k, v] = h.split("=", 2);
+        if (k === "z") {
+          const json = LZString.decompressFromEncodedURIComponent(v || "");
+          if (json) hashPayload = JSON.parse(json);
+        } else if (k === "p") {
+          const json = decodeURIComponent(v || "");
+          if (json) hashPayload = JSON.parse(json);
+        }
+      } catch (e) {
+        // 忽略解析失败
+      }
+    })();
+
+    // ============ ② 基础参数 ============
     const title   = qs.get("title") || "教学视频黑板";
     const audio   = qs.get("audio") || "";
-    const srt     = qs.get("srt") || "";
-    const summary = qs.get("summary") || "";
 
     document.getElementById("title").textContent = title;
     if (audio) document.getElementById("audio").src = audio;
 
-    // ---------- 关键帧解析：兼容旧参 + 新短参 ----------
+    // ============ ③ 关键帧（兼容旧参 + 新短参） ============
     function ensureSlashEnd(s){ return s ? (s.endsWith("/") ? s : s + "/") : s; }
-    function pad(n, width){ const s=String(n); return s.length>=width ? s : "0".repeat(width-s.length)+s; }
+    function padNum(n, width){ const s=String(n); return s.length>=width ? s : "0".repeat(width-s.length)+s; }
 
     const $frames = document.getElementById("frames");
 
@@ -100,26 +121,22 @@
       .map(s => s.trim())
       .filter(Boolean);
 
-    // 新（推荐）：frames_base + fstart + fend（可选 prefix / pad / ext）
+    // 新（短参）：frames_base + fstart + fend（可选 prefix / pad / ext）
     const framesBase = ensureSlashEnd(qs.get("frames_base") || "");
     const fstart     = parseInt(qs.get("fstart") || "0", 10);
-    const fend       = parseInt(qs.get("fend") || "0", 10);
+    const fend       = parseInt(qs.get("fend")   || "0", 10);
     const prefix     = qs.get("prefix") || "input-frame_";
-    const padLen     = parseInt(qs.get("pad") || "4", 10); // 0001 格式
-    const ext        = (qs.get("ext") || "jpg").replace(/^\./, ""); // jpg/png
+    const padLen     = parseInt(qs.get("pad") || "4", 10); // 0001
+    const ext        = (qs.get("ext") || "jpg").replace(/^\./, "");
 
-    // 合并两种来源，优先旧参（若二者都提供则一起展示）
     const toRender = [...framesList];
-
     if (framesBase && fstart > 0 && fend >= fstart) {
-      const base = framesBase;
       for (let i = fstart; i <= fend; i++) {
-        toRender.push(`${base}${prefix}${pad(i, padLen)}.${ext}`);
+        toRender.push(`${framesBase}${prefix}${padNum(i, padLen)}.${ext}`);
       }
     }
 
     if (toRender.length) {
-      // 渲染
       toRender.forEach(url => {
         const img = new Image();
         img.loading = "lazy";
@@ -135,22 +152,43 @@
       $frames.innerHTML = '<div class="muted">未传入 frames 或 frames_base/fstart/fend</div>';
     }
 
-    // ---------- srt：URL 或内嵌文本 ----------
+    // ============ ④ 字幕：优先 hash.srt -> srt_url -> srt（内嵌） ============
     const $srt = document.getElementById("srt");
-    if (/^https?:\/\//i.test(srt)) {
-      fetch(srt).then(r => r.text()).then(t => $srt.textContent = t).catch(() => {
-        $srt.textContent = "字幕加载失败，请检查 srt 链接。";
-      });
+    const srtFromHash = hashPayload.srt || "";
+    const srtUrl  = qs.get("srt_url") || "";
+    const srtText = qs.get("srt") || "";
+
+    if (srtFromHash) {
+      $srt.textContent = srtFromHash;
+    } else if (srtUrl) {
+      fetch(srtUrl).then(r => r.text()).then(t => $srt.textContent = t)
+        .catch(() => $srt.textContent = "字幕加载失败，请检查 srt_url。");
+    } else if (srtText) {
+      // 允许直接放在 query 中（短文案）
+      try { $srt.textContent = decodeURIComponent(srtText); }
+      catch { $srt.textContent = srtText; }
     } else {
-      $srt.textContent = srt ? decodeURIComponent(srt) : "（无字幕）";
+      $srt.textContent = "（无字幕）";
     }
 
-    // ---------- summary：允许直接传已渲染 HTML ----------
+    // ============ ⑤ 教学要点：优先 hash.summary -> summary_url -> summary ============
     const $summary = document.getElementById("summary");
-    try {
-      $summary.innerHTML = decodeURIComponent(summary);
-    } catch {
-      $summary.textContent = summary || "（无）";
+    const summaryFromHash = hashPayload.summary || "";
+    const summaryUrl   = qs.get("summary_url") || "";
+    const summaryQuery = qs.get("summary") || "";
+
+    if (summaryFromHash) {
+      // 建议注入已渲染 HTML
+      $summary.innerHTML = summaryFromHash;
+    } else if (summaryUrl) {
+      fetch(summaryUrl).then(r => r.text()).then(html => $summary.innerHTML = html)
+        .catch(() => $summary.textContent = "教学要点加载失败，请检查 summary_url。");
+    } else if (summaryQuery) {
+      // 兼容直接传 HTML/Markdown 文本（建议先在服务端渲染成 HTML 再传）
+      try { $summary.innerHTML = decodeURIComponent(summaryQuery); }
+      catch { $summary.textContent = summaryQuery; }
+    } else {
+      $summary.textContent = "（无）";
     }
   </script>
 </body>
