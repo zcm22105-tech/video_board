@@ -4,26 +4,175 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>教学视频黑板</title>
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;margin:0;background:#f7f7fb;color:#111}
-    header{padding:16px 20px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06);position:sticky;top:0}
-    .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
-    h1{font-size:22px;margin:0}
-    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
-    .card{background:#fff;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.06);padding:12px;overflow:hidden}
-    .card h2{font-size:16px;margin:0 0 8px}
-    .muted{color:#666;font-size:13px}
-    video, audio, img{width:100%;border-radius:10px}
-    pre{white-space:pre-wrap;word-break:break-word}
-    .summary{padding:12px}
-    .footer{color:#777;font-size:12px;margin:24px 0 40px}
-    .tag{display:inline-block;background:#eef;border-radius:999px;padding:2px 8px;margin-right:6px;font-size:12px}
-    .kbd{background:#eee;border-radius:6px;padding:2px 6px}
-    a{color:#0a58ca;text-decoration:none}
-    a:hover{text-decoration:underline}
-  </style>
-  <!-- 用于解压 #z=... 的压缩载荷（字幕/总结） -->
+
+  <!-- 压缩载荷解码（用于 #z= / #p= 携带的字幕与总结） -->
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+  <!-- 手写体/粉笔风格字体（可替换为本地字体） -->
+  <link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&family=Schoolbell&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --board:#123b2a;          /* 黑板深绿 */
+      --board2:#0f3325;         /* 阴影层 */
+      --chalk:#f5f5f5;          /* 粉笔白 */
+      --chalk-muted:#d7e5df;    /* 粉笔淡色 */
+      --accent:#ffe08a;         /* 粉笔黄色（标题点缀） */
+    }
+
+    html,body{height:100%}
+    body{
+      margin:0;
+      color:var(--chalk);
+      background:
+        radial-gradient(circle at 20% 15%, rgba(255,255,255,.06), transparent 35%),
+        radial-gradient(circle at 80% 25%, rgba(255,255,255,.04), transparent 40%),
+        linear-gradient(135deg, var(--board2), var(--board));
+      background-attachment: fixed;
+      font-family: "Schoolbell", "Gloria Hallelujah", "Segoe UI", -apple-system, system-ui, sans-serif;
+      line-height: 1.6;
+      /* 粉笔轻微颗粒感 */
+      position: relative;
+      overflow-x: hidden;
+    }
+    /* 细微粉笔灰尘 */
+    body::before{
+      content:"";
+      position:fixed; inset:0;
+      background-image:
+        radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+        radial-gradient(rgba(255,255,255,.025) 1px, transparent 1px);
+      background-size: 3px 3px, 5px 5px;
+      background-position: 0 0, 1px 2px;
+      pointer-events:none;
+      mix-blend-mode: screen;
+    }
+
+    header{
+      position:sticky; top:0; z-index:3;
+      padding:18px 16px 8px 16px;
+      background: linear-gradient(to bottom, rgba(0,0,0,.25), rgba(0,0,0,.05) 60%, transparent);
+      backdrop-filter: blur(1px);
+      border-bottom: 1px dashed rgba(255,255,255,.12);
+    }
+    h1{
+      margin:0;
+      font-size: clamp(20px, 3.5vw, 36px);
+      color: var(--accent);
+      text-shadow: 0 1px 0 rgba(0,0,0,.35), 0 0 14px rgba(255,255,255,.06);
+      letter-spacing: 1px;
+    }
+
+    .wrap{max-width:1100px;margin:18px auto 80px auto;padding:0 14px}
+
+    /* “粉笔框”——用虚线+手绘抖动的感觉 */
+    .chalk-box{
+      margin: 16px 0;
+      padding: 14px 12px;
+      border: 2px dashed rgba(255,255,255,.4);
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(0,0,0,.05));
+      box-shadow: inset 0 0 18px rgba(0,0,0,.25), 0 4px 16px rgba(0,0,0,.18);
+    }
+    .section-title{
+      font-size: clamp(16px, 2.6vw, 24px);
+      margin: 0 0 10px 0;
+      color: var(--accent);
+      text-shadow: 0 1px 0 rgba(0,0,0,.5);
+      display:flex; align-items:center; gap:.5em;
+    }
+    .chalk-dot{
+      width:.6em;height:.6em;border-radius:50%;
+      border:2px solid var(--accent);
+      box-shadow: 0 0 6px rgba(255,224,138,.6), inset 0 0 2px rgba(255,255,255,.8);
+    }
+
+    /* 音频条样式适配黑板 */
+    audio{ width:100%; filter: drop-shadow(0 3px 10px rgba(0,0,0,.35)); }
+    .muted{ color: var(--chalk-muted); opacity:.9; font-size: 14px }
+
+    /* 关键帧缩略图网格 */
+    .thumb-grid{
+      display:grid; gap:10px;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    }
+    .thumb{
+      position:relative; overflow:hidden; border-radius:10px;
+      transform: translateZ(0);
+      background: rgba(255,255,255,.03);
+      border: 1px dashed rgba(255,255,255,.25);
+      cursor: zoom-in;
+    }
+    .thumb img{
+      width:100%; height:100%; object-fit:cover; display:block;
+      filter: contrast(1.02) saturate(1.05);
+      transform-origin:center center;
+      transition: transform .18s ease, filter .18s ease;
+    }
+    .thumb:hover img{
+      transform: scale(1.08);
+      filter: contrast(1.1) saturate(1.1);
+    }
+
+    /* 轻微的粉笔板擦痕 */
+    .eraser-line{
+      height:1px; margin: 8px 0 12px 0;
+      background: repeating-linear-gradient(
+        to right,
+        rgba(255,255,255,.18) 0, rgba(255,255,255,.18) 12px,
+        transparent 12px, transparent 22px
+      );
+      mix-blend-mode: screen;
+    }
+
+    /* 字幕/总结内容框 */
+    pre, .summary{
+      background: rgba(0,0,0,.18);
+      border: 1px dashed rgba(255,255,255,.25);
+      border-radius: 10px;
+      padding: 12px;
+      color: var(--chalk);
+      max-height: 380px;
+      overflow:auto;
+      box-shadow: inset 0 0 10px rgba(0,0,0,.25);
+      white-space: pre-wrap; word-break: break-word;
+    }
+
+    /* 全屏图片查看器（灯箱） */
+    .viewer{
+      position:fixed; inset:0; z-index:999;
+      background: rgba(0,0,0,.7);
+      display:none; align-items:center; justify-content:center;
+      backdrop-filter: blur(2px);
+    }
+    .viewer.open{ display:flex; }
+    .viewer img{
+      max-width: 94vw; max-height: 86vh;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,.6);
+    }
+    .viewer .nav{
+      position: absolute; inset: 0; display:flex; align-items:center; justify-content:space-between;
+      pointer-events:none;
+    }
+    .viewer .btn{
+      pointer-events:auto;
+      background: rgba(255,255,255,.12);
+      border: 2px solid rgba(255,255,255,.6);
+      color: #fff; padding: 8px 12px; border-radius: 10px;
+      font-size: 16px; cursor:pointer; user-select:none;
+      backdrop-filter: blur(2px);
+      transition: transform .08s ease, background .2s ease;
+    }
+    .viewer .btn:hover{ background: rgba(255,255,255,.2); transform: translateY(-1px); }
+    .viewer .cta{
+      position:absolute; top:14px; right:14px; display:flex; gap:8px;
+    }
+    .viewer .index{
+      position:absolute; bottom:14px; left:50%; transform: translateX(-50%);
+      font-size: 14px; color:#fff; background: rgba(0,0,0,.35);
+      padding: 4px 10px; border-radius: 999px; border:1px solid rgba(255,255,255,.35);
+    }
+  </style>
 </head>
 <body>
   <header>
@@ -31,64 +180,60 @@
   </header>
 
   <div class="wrap">
-    <div class="card">
-      <h2>音频预览</h2>
+
+    <!-- 课堂导入（音频） -->
+    <section class="chalk-box" aria-label="课堂导入">
+      <h2 class="section-title"><span class="chalk-dot"></span> 课堂导入 · 音频</h2>
+      <div class="eraser-line"></div>
       <audio id="audio" controls></audio>
-      <div class="muted">如无法播放，检查 audio 参数是否为可直接访问的 mp3/m4a 链接。</div>
-    </div>
+      <div id="audioHint" class="muted" style="margin-top:6px;"></div>
+    </section>
 
-    <div class="card">
-      <h2>关键帧</h2>
-      <div id="frames" class="grid"></div>
-      <div class="muted">
-        传参有两种方式：<br>
-        ① 旧：<span class="kbd">frames=url1,url2,...</span><br>
-        ② 新（推荐，短参）：<span class="kbd">frames_base=...&fstart=1&fend=N</span>
-        （可选 <span class="kbd">prefix</span>、<span class="kbd">pad</span>、<span class="kbd">ext</span>）
-      </div>
-    </div>
+    <!-- 关键帧讲解（缩略图 + 灯箱查看） -->
+    <section class="chalk-box" aria-label="关键帧讲解">
+      <h2 class="section-title"><span class="chalk-dot"></span> 关键帧讲解 · 画面要点</h2>
+      <div class="eraser-line"></div>
+      <div id="frames" class="thumb-grid"></div>
+    </section>
 
-    <div class="card">
-      <h2>字幕（SRT 或纯文本）</h2>
-      <pre id="srt" class="muted">正在加载…</pre>
-    </div>
+    <!-- 黑板抄写（字幕） -->
+    <section class="chalk-box" aria-label="黑板抄写">
+      <h2 class="section-title"><span class="chalk-dot"></span> 黑板抄写 · 字幕</h2>
+      <div class="eraser-line"></div>
+      <pre id="srt">（无字幕）</pre>
+    </section>
 
-    <div class="card">
-      <h2>教学要点（Markdown/HTML）</h2>
+    <!-- 课堂小结（要点） -->
+    <section class="chalk-box" aria-label="课堂小结">
+      <h2 class="section-title"><span class="chalk-dot"></span> 课堂小结 · 要点</h2>
+      <div class="eraser-line"></div>
       <div id="summary" class="summary">（无）</div>
-      <div class="muted">建议把渲染后的 Markdown 作为 HTML 放入 <span class="kbd">summary</span> 或哈希载荷。</div>
-    </div>
+    </section>
 
-    <div class="footer">
-      支持参数：
-      <span class="tag">title</span>
-      <span class="tag">audio</span>
-      <span class="tag">frames</span>
-      <span class="tag">frames_base</span>
-      <span class="tag">fstart</span>
-      <span class="tag">fend</span>
-      <span class="tag">prefix</span>
-      <span class="tag">pad</span>
-      <span class="tag">ext</span>
-      <span class="tag">srt / srt_url</span>
-      <span class="tag">summary / summary_url</span>
-      <span class="tag">#z=压缩载荷</span>
-      <div style="margin-top:8px">
-        例（短参）：<code>?audio=https://.../audio.m4a&frames_base=https://.../input-frames/&fstart=1&fend=15#z=...</code>
-      </div>
+  </div>
+
+  <!-- 图片灯箱查看器 -->
+  <div id="viewer" class="viewer" aria-hidden="true">
+    <div class="nav">
+      <button id="prevBtn" class="btn" aria-label="上一张">⟵ 上一张</button>
+      <button id="nextBtn" class="btn" aria-label="下一张">下一张 ⟶</button>
     </div>
+    <div class="cta">
+      <button id="closeBtn" class="btn" aria-label="退出">✕ 退出</button>
+    </div>
+    <img id="viewerImg" alt="关键帧大图" />
+    <div id="viewerIndex" class="index">0 / 0</div>
   </div>
 
   <script>
+    /* ------------------ 参数读取（保留短参机制 + hash 大文本） ------------------ */
     const qs = new URLSearchParams(location.search);
 
-    // ============ ① 从哈希读取压缩载荷（可包含 srt/summary 等大文本） ============
     let hashPayload = {};
     (function readHash(){
-      try {
-        const h = (location.hash || "").slice(1);     // 去掉 '#'
-        if (!h) return;
-        // 允许两种：z=（压缩）或 p=（未压缩 JSON，备用）
+      try{
+        const h = (location.hash || "").slice(1);
+        if(!h) return;
         const [k, v] = h.split("=", 2);
         if (k === "z") {
           const json = LZString.decompressFromEncodedURIComponent(v || "");
@@ -97,62 +242,57 @@
           const json = decodeURIComponent(v || "");
           if (json) hashPayload = JSON.parse(json);
         }
-      } catch (e) {
-        // 忽略解析失败
-      }
+      }catch(e){}
     })();
 
-    // ============ ② 基础参数 ============
     const title   = qs.get("title") || "教学视频黑板";
     const audio   = qs.get("audio") || "";
-
     document.getElementById("title").textContent = title;
-    if (audio) document.getElementById("audio").src = audio;
+    if (audio) {
+      document.getElementById("audio").src = audio;
+      document.getElementById("audioHint").textContent = "提示：若无法播放，请确认为可直链访问的音频（mp3/m4a）。";
+    } else {
+      document.getElementById("audioHint").textContent = "（未提供音频链接）";
+    }
 
-    // ============ ③ 关键帧（兼容旧参 + 新短参） ============
+    /* ------------------ 关键帧处理：短参 frames_base + fstart/fend ------------------ */
     function ensureSlashEnd(s){ return s ? (s.endsWith("/") ? s : s + "/") : s; }
     function padNum(n, width){ const s=String(n); return s.length>=width ? s : "0".repeat(width-s.length)+s; }
 
-    const $frames = document.getElementById("frames");
-
-    // 旧：frames=url1,url2,...
     const framesList = (qs.get("frames") || "")
-      .split(",")
-      .map(s => s.trim())
-      .filter(Boolean);
+      .split(",").map(s=>s.trim()).filter(Boolean);
 
-    // 新（短参）：frames_base + fstart + fend（可选 prefix / pad / ext）
     const framesBase = ensureSlashEnd(qs.get("frames_base") || "");
     const fstart     = parseInt(qs.get("fstart") || "0", 10);
     const fend       = parseInt(qs.get("fend")   || "0", 10);
     const prefix     = qs.get("prefix") || "input-frame_";
-    const padLen     = parseInt(qs.get("pad") || "4", 10); // 0001
+    const padLen     = parseInt(qs.get("pad") || "4", 10);
     const ext        = (qs.get("ext") || "jpg").replace(/^\./, "");
 
-    const toRender = [...framesList];
+    const urls = [...framesList];
     if (framesBase && fstart > 0 && fend >= fstart) {
-      for (let i = fstart; i <= fend; i++) {
-        toRender.push(`${framesBase}${prefix}${padNum(i, padLen)}.${ext}`);
+      for(let i=fstart;i<=fend;i++){
+        urls.push(`${framesBase}${prefix}${padNum(i, padLen)}.${ext}`);
       }
     }
 
-    if (toRender.length) {
-      toRender.forEach(url => {
+    const $grid = document.getElementById("frames");
+    if (urls.length){
+      urls.forEach((u, idx)=>{
+        const item = document.createElement("div");
+        item.className = "thumb";
         const img = new Image();
-        img.loading = "lazy";
-        img.decoding = "async";
-        img.src = url;
-
-        const card = document.createElement("div");
-        card.className = "card";
-        card.appendChild(img);
-        $frames.appendChild(card);
+        img.loading = "lazy"; img.decoding = "async";
+        img.src = u; img.alt = `关键帧 ${idx+1}`;
+        item.appendChild(img);
+        item.addEventListener("click", ()=> openViewer(idx));
+        $grid.appendChild(item);
       });
-    } else {
-      $frames.innerHTML = '<div class="muted">未传入 frames 或 frames_base/fstart/fend</div>';
+    }else{
+      $grid.innerHTML = '<div class="muted">（未提供关键帧）</div>';
     }
 
-    // ============ ④ 字幕：优先 hash.srt -> srt_url -> srt（内嵌） ============
+    /* ------------------ 字幕（优先 hash.srt -> srt_url -> srt 文本） ------------------ */
     const $srt = document.getElementById("srt");
     const srtFromHash = hashPayload.srt || "";
     const srtUrl  = qs.get("srt_url") || "";
@@ -161,35 +301,68 @@
     if (srtFromHash) {
       $srt.textContent = srtFromHash;
     } else if (srtUrl) {
-      fetch(srtUrl).then(r => r.text()).then(t => $srt.textContent = t)
-        .catch(() => $srt.textContent = "字幕加载失败，请检查 srt_url。");
+      fetch(srtUrl).then(r=>r.text()).then(t=> $srt.textContent = t)
+        .catch(()=> $srt.textContent = "字幕加载失败");
     } else if (srtText) {
-      // 允许直接放在 query 中（短文案）
-      try { $srt.textContent = decodeURIComponent(srtText); }
-      catch { $srt.textContent = srtText; }
-    } else {
-      $srt.textContent = "（无字幕）";
+      try{ $srt.textContent = decodeURIComponent(srtText); }
+      catch{ $srt.textContent = srtText; }
     }
 
-    // ============ ⑤ 教学要点：优先 hash.summary -> summary_url -> summary ============
+    /* ------------------ 小结（优先 hash.summary -> summary_url -> summary 文本/HTML） ------------------ */
     const $summary = document.getElementById("summary");
     const summaryFromHash = hashPayload.summary || "";
     const summaryUrl   = qs.get("summary_url") || "";
     const summaryQuery = qs.get("summary") || "";
 
     if (summaryFromHash) {
-      // 建议注入已渲染 HTML
       $summary.innerHTML = summaryFromHash;
     } else if (summaryUrl) {
-      fetch(summaryUrl).then(r => r.text()).then(html => $summary.innerHTML = html)
-        .catch(() => $summary.textContent = "教学要点加载失败，请检查 summary_url。");
+      fetch(summaryUrl).then(r=>r.text()).then(html => $summary.innerHTML = html)
+        .catch(()=> $summary.textContent = "教学要点加载失败");
     } else if (summaryQuery) {
-      // 兼容直接传 HTML/Markdown 文本（建议先在服务端渲染成 HTML 再传）
-      try { $summary.innerHTML = decodeURIComponent(summaryQuery); }
-      catch { $summary.textContent = summaryQuery; }
-    } else {
-      $summary.textContent = "（无）";
+      try{ $summary.innerHTML = decodeURIComponent(summaryQuery); }
+      catch{ $summary.textContent = summaryQuery; }
     }
+
+    /* ------------------ 灯箱查看器（点击缩略图进入，仅显示单张、可翻页/退出） ------------------ */
+    const viewer      = document.getElementById("viewer");
+    const viewerImg   = document.getElementById("viewerImg");
+    const viewerIndex = document.getElementById("viewerIndex");
+    const prevBtn     = document.getElementById("prevBtn");
+    const nextBtn     = document.getElementById("nextBtn");
+    const closeBtn    = document.getElementById("closeBtn");
+
+    let cur = 0;
+    function setIndex(i){
+      cur = (i+urls.length) % urls.length;
+      viewerImg.src = urls[cur];
+      viewerIndex.textContent = `${cur+1} / ${urls.length}`;
+    }
+    function openViewer(i){
+      if (!urls.length) return;
+      setIndex(i);
+      viewer.classList.add("open");
+      viewer.setAttribute("aria-hidden", "false");
+    }
+    function closeViewer(){
+      viewer.classList.remove("open");
+      viewer.setAttribute("aria-hidden", "true");
+    }
+    function next(){ setIndex(cur+1); }
+    function prev(){ setIndex(cur-1); }
+
+    nextBtn.addEventListener("click", next);
+    prevBtn.addEventListener("click", prev);
+    closeBtn.addEventListener("click", closeViewer);
+    viewer.addEventListener("click", (e)=>{ if(e.target === viewer) closeViewer(); });
+
+    // 键盘操作：←/→ 翻页，Esc 退出
+    window.addEventListener("keydown", (e)=>{
+      if (!viewer.classList.contains("open")) return;
+      if (e.key === "ArrowRight") next();
+      else if (e.key === "ArrowLeft") prev();
+      else if (e.key === "Escape") closeViewer();
+    });
   </script>
 </body>
 </html>
