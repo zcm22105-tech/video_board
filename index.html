@@ -258,20 +258,25 @@
 
     /* ========== 读取哈希载荷（#z= 压缩 / #p= 未压缩 JSON） ========== */
     let hashPayload = {};
-    (function(){
-      try{
-        const raw = (location.hash || "").slice(1);
-        if(!raw) return;
-        const [k,v] = raw.split("=",2);
-        if(k==="z"){
-          const json = LZString.decompressFromEncodedURIComponent(v||"");
-          if(json) hashPayload = JSON.parse(json);
-        }else if(k==="p"){
-          const json = decodeURIComponent(v||"");
-          if(json) hashPayload = JSON.parse(json);
-        }
-      }catch{}
-    })();
+(function readHash(){
+  try{
+    const raw = (location.hash || "").slice(1);      // 去掉 '#'
+    if(!raw) return;
+
+    // 仅拿第一个参数（兼容 #p=...&xxx=... / #z=...&xxx=...）
+    const firstPair = raw.split("&", 1)[0];          // 只保留第1个 k=v
+    const [k, vRaw] = firstPair.split("=", 2);
+    const v = vRaw || "";
+
+    if(k === "z"){
+      const json = LZString.decompressFromEncodedURIComponent(v);
+      if(json) hashPayload = JSON.parse(json);
+    }else if(k === "p"){
+      const json = decodeURIComponent(v);
+      if(json) hashPayload = JSON.parse(json);
+    }
+  }catch{}
+})();
 
     /* ========== 基础参数 ========== */
     const title = qs.get("title") || "教学视频黑板";
