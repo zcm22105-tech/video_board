@@ -19,7 +19,8 @@
     html,body{height:100%}
     body{
       margin:0;
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"PingFang SC","Hiragino Sans GB","Microsoft Yahei",sans-serif;
+      /* 优先中文衬线（宋体/仿宋），再降级到思源宋体与系统衬线 */
+      font-family:"FangSong","SimSun","Songti SC","Source Han Serif SC","Noto Serif SC",Georgia,Times,serif;
       color:var(--fg);
       background:var(--bg);
     }
@@ -124,7 +125,11 @@
     /* ---------- 字幕/总结展示 ---------- */
     pre{ white-space:pre-wrap; word-break:break-word; color:var(--fg) }
 
-    #summary :is(h1,h2,h3){ color:var(--fg); margin:12px 0 6px; font-weight:600 }
+    /* 课堂小结内的标题层级：整体小于模块标题（18px） */
+    #summary h1{ font-size:16px; margin:10px 0 6px; font-weight:600 }
+    #summary h2{ font-size:15px; margin:10px 0 6px; font-weight:600 }
+    #summary h3{ font-size:14px; margin:8px 0 6px; font-weight:600 }
+    #summary h4{ font-size:13px; margin:6px 0 4px; font-weight:600 }
     #summary p{ margin:8px 0; color:var(--fg) }
     #summary ul{ margin:6px 0 6px 22px }
     #summary li{ margin:4px 0 }
