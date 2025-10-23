@@ -38,7 +38,12 @@
     <div class="card">
       <h2>关键帧</h2>
       <div id="frames" class="grid"></div>
-      <div class="muted">支持以逗号分隔的图片 URL 列表：<span class="kbd">frames=url1,url2,...</span></div>
+      <div class="muted">
+        传参有两种方式：<br>
+        ① 旧：<span class="kbd">frames=url1,url2,...</span><br>
+        ② 新（推荐，短参）：<span class="kbd">frames_base=...&fstart=1&fend=N</span>
+        （可选 <span class="kbd">prefix</span>、<span class="kbd">pad</span>、<span class="kbd">ext</span>）
+      </div>
     </div>
 
     <div class="card">
@@ -53,43 +58,84 @@
     </div>
 
     <div class="footer">
-      提示：把资源通过 URL 参数传入：<br/>
+      支持参数：
       <span class="tag">title</span>
       <span class="tag">audio</span>
       <span class="tag">frames</span>
+      <span class="tag">frames_base</span>
+      <span class="tag">fstart</span>
+      <span class="tag">fend</span>
+      <span class="tag">prefix</span>
+      <span class="tag">pad</span>
+      <span class="tag">ext</span>
       <span class="tag">srt</span>
       <span class="tag">summary</span>
-      例如：<code>?title=Demo&audio=https://xxx/audio.m4a&frames=https://a.jpg,https://b.jpg&srt=https://xxx/sub.srt&summary=%23%20报告...</code>
+      <div style="margin-top:8px">
+        例（短参）：<code>?audio=https://.../audio.m4a&frames_base=https://.../input-frames/&fstart=1&fend=15</code>
+      </div>
     </div>
   </div>
 
   <script>
     const qs = new URLSearchParams(location.search);
-    const title = qs.get("title") || "教学视频黑板";
-    const audio = qs.get("audio") || "";
-    const frames = (qs.get("frames") || "").split(",").map(s => s.trim()).filter(Boolean);
-    const srt = qs.get("srt") || "";
+
+    // 基本参数
+    const title   = qs.get("title") || "教学视频黑板";
+    const audio   = qs.get("audio") || "";
+    const srt     = qs.get("srt") || "";
     const summary = qs.get("summary") || "";
 
     document.getElementById("title").textContent = title;
     if (audio) document.getElementById("audio").src = audio;
 
+    // ---------- 关键帧解析：兼容旧参 + 新短参 ----------
+    function ensureSlashEnd(s){ return s ? (s.endsWith("/") ? s : s + "/") : s; }
+    function pad(n, width){ const s=String(n); return s.length>=width ? s : "0".repeat(width-s.length)+s; }
+
     const $frames = document.getElementById("frames");
-    if (frames.length) {
-      frames.forEach(url => {
+
+    // 旧：frames=url1,url2,...
+    const framesList = (qs.get("frames") || "")
+      .split(",")
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    // 新（推荐）：frames_base + fstart + fend（可选 prefix / pad / ext）
+    const framesBase = ensureSlashEnd(qs.get("frames_base") || "");
+    const fstart     = parseInt(qs.get("fstart") || "0", 10);
+    const fend       = parseInt(qs.get("fend") || "0", 10);
+    const prefix     = qs.get("prefix") || "input-frame_";
+    const padLen     = parseInt(qs.get("pad") || "4", 10); // 0001 格式
+    const ext        = (qs.get("ext") || "jpg").replace(/^\./, ""); // jpg/png
+
+    // 合并两种来源，优先旧参（若二者都提供则一起展示）
+    const toRender = [...framesList];
+
+    if (framesBase && fstart > 0 && fend >= fstart) {
+      const base = framesBase;
+      for (let i = fstart; i <= fend; i++) {
+        toRender.push(`${base}${prefix}${pad(i, padLen)}.${ext}`);
+      }
+    }
+
+    if (toRender.length) {
+      // 渲染
+      toRender.forEach(url => {
         const img = new Image();
         img.loading = "lazy";
+        img.decoding = "async";
         img.src = url;
+
         const card = document.createElement("div");
         card.className = "card";
         card.appendChild(img);
         $frames.appendChild(card);
       });
     } else {
-      $frames.innerHTML = '<div class="muted">未传入 frames 参数</div>';
+      $frames.innerHTML = '<div class="muted">未传入 frames 或 frames_base/fstart/fend</div>';
     }
 
-    // srt 可以是 URL 或者直接的字幕文本
+    // ---------- srt：URL 或内嵌文本 ----------
     const $srt = document.getElementById("srt");
     if (/^https?:\/\//i.test(srt)) {
       fetch(srt).then(r => r.text()).then(t => $srt.textContent = t).catch(() => {
@@ -99,7 +145,7 @@
       $srt.textContent = srt ? decodeURIComponent(srt) : "（无字幕）";
     }
 
-    // summary 允许直接传入已经渲染好的 HTML（你在 Coze 可直接传 Markdown → LLM 输出的 HTML）
+    // ---------- summary：允许直接传已渲染 HTML ----------
     const $summary = document.getElementById("summary");
     try {
       $summary.innerHTML = decodeURIComponent(summary);
